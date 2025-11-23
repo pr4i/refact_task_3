@@ -3,14 +3,17 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Http;
 
 class ProxyController extends Controller
 {
     private function base(): string {
-        return getenv('RUST_BASE') ?: 'http://rust_iss:3000';
+        return env('RUST_BASE', 'http://rust_iss:3000');
     }
 
-    public function last()  { return $this->pipe('/last'); }
+    public function last() {
+        return $this->pipe('/last');
+    }
 
     public function trend() {
         $q = request()->getQueryString();
@@ -20,21 +23,33 @@ class ProxyController extends Controller
     private function pipe(string $path)
     {
         $url = $this->base() . $path;
+
         try {
-            $ctx = stream_context_create([
-                'http' => ['timeout' => 5, 'ignore_errors' => true],
-            ]);
-            $body = @file_get_contents($url, false, $ctx);
-            if ($body === false || trim($body) === '') {
-                $body = '{}';
+            $response = Http::timeout(5)
+                ->retry(2, 150)
+                ->withHeaders([
+                    'Accept' => 'application/json'
+                ])
+                ->get($url);
+
+            // Если Rust отдал пустой ответ
+            $json = $response->json();
+            if (!$json) {
+                $json = [];
             }
-            json_decode($body);
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                $body = '{}';
-            }
-            return new Response($body, 200, ['Content-Type' => 'application/json']);
+
+            return response()->json($json, 200);
+
         } catch (\Throwable $e) {
-            return new Response('{"error":"upstream"}', 200, ['Content-Type' => 'application/json']);
+            // ТЗ: "ошибки всегда HTTP 200"
+            return response()->json([
+                'ok' => false,
+                'error' => [
+                    'code' => 'UPSTREAM_ERROR',
+                    'message' => $e->getMessage(),
+                    'trace_id' => uniqid('proxy_', true)
+                ]
+            ], 200);
         }
     }
 }
