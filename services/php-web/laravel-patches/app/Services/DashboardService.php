@@ -10,15 +10,15 @@ class DashboardService
         private RustApiClient $client
     ) {}
 
-public function loadIss(): DashboardDTO
-{
-    $iss = $this->client->get('/last');
+    public function loadIss(): DashboardDTO
+    {
+        $iss = $this->client->get('/last');
 
-    $metrics = new IssMetricDTO(
-        speed: $iss['payload']['velocity'] ?? null,
-        altitude: $iss['payload']['altitude'] ?? null,
-        neo_total: 0
-    );
+        $metrics = new IssMetricDTO(
+            speed: $iss['payload']['velocity'] ?? null,
+            altitude: $iss['payload']['altitude'] ?? null,
+            neo_total: 0
+        );
 
     return new DashboardDTO(
         iss: $iss,
