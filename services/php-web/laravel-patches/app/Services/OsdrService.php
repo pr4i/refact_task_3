@@ -3,19 +3,18 @@
 namespace App\Services;
 
 use App\DataSources\OsdrDataSource;
-use App\Utils\OsdrFlattener;
 
 class OsdrService
 {
     public function __construct(
-        private OsdrDataSource $dataSource
+        private OsdrDataSource $source
     ) {}
 
-    public function load(int $limit): array
+    public function getItems(int $limit): array
     {
-        $data  = $this->dataSource->list($limit);
-        $items = $data['items'] ?? [];
+        $items = $this->source->list($limit);
 
-        return OsdrFlattener::flatten($items);
+        // если у тебя есть DTO – вот тут можно маппить через OsdrItemDTO::fromArray()
+        return $items;
     }
 }

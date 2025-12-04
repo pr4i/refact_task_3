@@ -1,15 +1,7 @@
-<?php
-
-namespace App\DataSources;
-
-class OsdrDataSource
+public function list(int $limit): array
 {
-    public function __construct(
-        private RustApiClient $client
-    ) {}
+    $resp = $this->client->get('/osdr/list', ['query' => ['limit' => $limit]]);
+    $json = json_decode($resp->getBody()->getContents(), true);
 
-    public function list(int $limit): array
-    {
-        return $client->get('/osdr/list?limit=' . $limit);
-    }
+    return $json['data']['items'] ?? [];
 }

@@ -3,17 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Services\IssService;
+use App\ViewModels\IssViewModel;
 
 class IssController extends Controller
 {
     public function index(IssService $service)
     {
-        $dto = $service->loadData();
+        $data = $service->getIssData();
 
-        return view('iss', [
-            'last'  => $dto->last,
-            'trend' => $dto->trend,
-            'base'  => env('RUST_BASE')
-        ]);
+        return view('iss', new IssViewModel($data['last'], $data['trend']));
     }
 }

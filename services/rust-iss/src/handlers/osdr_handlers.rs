@@ -1,49 +1,59 @@
-use axum::extract::{Query, State};
-use axum::Json;
-use serde_json::json;
+use axum::{
+    extract::{Query, State},
+};
+use serde::Serialize;
+use serde_json::Value;
+use std::collections::HashMap;
 
 use crate::AppState;
-use crate::errors::{ApiError, ApiResult, ApiResponse};
+use crate::errors::{ApiError, ApiResult, ok};
 use crate::services::osdr_service::OsdrService;
 
-pub async fn osdr_sync(State(st): State<AppState>) -> ApiResult<serde_json::Value> {
-    let service = OsdrService::new(&st)
-        .map_err(|e| ApiError::new("INIT_SERVICE", e.to_string()))?;
-
-    let written = service
-        .sync(&st)
-        .await
-        .map_err(|e| ApiError::new("OSDR_SYNC_ERROR", e.to_string()))?;
-
-    Ok(Json(ApiResponse {
-        ok: true,
-        data: Some(json!({ "written": written })),
-        error: None,
-    }))
+#[derive(Serialize)]
+pub struct OsdrListResponse {
+    pub items: Vec<Value>,
 }
 
-#[derive(serde::Deserialize)]
-pub struct OsdrListParams {
-    pub limit: Option<i64>,
+#[derive(Serialize)]
+pub struct OsdrSyncResponse {
+    pub written: usize,
 }
 
+// GET /osdr/list?limit=20
 pub async fn osdr_list(
-    Query(params): Query<OsdrListParams>,
-    State(st): State<AppState>,
-) -> ApiResult<serde_json::Value> {
-    let service =
-        OsdrService::new(&st).map_err(|e| ApiError::new("INIT_SERVICE", e.to_string()))?;
+    State(state): State<AppState>,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<OsdrListResponse> {
+    let service = OsdrService::new(&state)
+        .map_err(|e| ApiError::internal(format!("Failed to init OsdrService: {e}")))?;
 
-    let limit = params.limit.unwrap_or(20);
+    let limit: i64 = q
+        .get("limit")
+        .and_then(|s| s.parse::<i64>().ok())
+        .unwrap_or_else(|| {
+            std::env::var("OSDR_LIST_LIMIT")
+                .ok()
+                .and_then(|s| s.parse::<i64>().ok())
+                .unwrap_or(20)
+        });
 
     let items = service
-        .list(&st, limit)
+        .list(&state, limit)
         .await
-        .map_err(|e| ApiError::new("OSDR_LIST_ERROR", e.to_string()))?;
+        .map_err(|e| ApiError::db(format!("Failed to list OSDR items: {e}")))?;
 
-    Ok(Json(ApiResponse {
-        ok: true,
-        data: Some(json!({ "items": items })),
-        error: None,
-    }))
+    Ok(ok(OsdrListResponse { items }))
+}
+
+// GET /osdr/sync
+pub async fn osdr_sync(State(state): State<AppState>) -> ApiResult<OsdrSyncResponse> {
+    let service = OsdrService::new(&state)
+        .map_err(|e| ApiError::internal(format!("Failed to init OsdrService: {e}")))?;
+
+    let written = service
+        .sync(&state)
+        .await
+        .map_err(|e| ApiError::upstream(None, format!("Failed to sync OSDR: {e}")))?;
+
+    Ok(ok(OsdrSyncResponse { written }))
 }

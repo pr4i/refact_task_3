@@ -1,17 +1,14 @@
-use std::time::Duration;
-use tracing::error;
-
-use crate::{AppState};
-use crate::services::osdr_service::OsdrService;
-
-pub async fn run_osdr_scheduler(state: AppState) {
+pub fn run_osdr_scheduler(state: AppState) {
     tokio::spawn(async move {
-        let service = OsdrService::new(&state).expect("Failed to init OsdrService");
-
         loop {
-            if let Err(e) = service.sync(&state).await {
-                error!("OSDR scheduler error: {:?}", e);
-            }
+            let pool = state.pool.clone();
+            let st = state.clone();
+
+            let _ = run_with_lock(&pool, 1002, || async move {
+                st.osdr_service().sync(&st).await?;
+                Ok(())
+            })
+            .await;
 
             tokio::time::sleep(Duration::from_secs(state.every_osdr)).await;
         }

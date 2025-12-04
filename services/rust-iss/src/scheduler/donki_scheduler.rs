@@ -1,18 +1,22 @@
-use std::time::Duration;
-use tracing::error;
-
-use crate::AppState;
-use crate::services::space_service::SpaceService;
-
-pub async fn run_donki_scheduler(state: AppState) {
+pub fn run_donki_scheduler(state: AppState) {
     tokio::spawn(async move {
-        let service = SpaceService::new().expect("Failed to init SpaceService");
-
         loop {
+            let pool = state.pool.clone();
+            let st = state.clone();
+
             // FLR
-            let _ = service.refresh(&state, "flr").await;
+            let _ = run_with_lock(&pool, 1005, || async move {
+                st.space_service().refresh(&st, "flr").await?;
+                Ok(())
+            })
+            .await;
+
             // CME
-            let _ = service.refresh(&state, "cme").await;
+            let _ = run_with_lock(&pool, 1006, || async move {
+                st.space_service().refresh(&st, "cme").await?;
+                Ok(())
+            })
+            .await;
 
             tokio::time::sleep(Duration::from_secs(state.every_donki)).await;
         }

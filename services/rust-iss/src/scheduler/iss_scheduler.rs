@@ -3,15 +3,19 @@ use tracing::error;
 
 use crate::{AppState};
 use crate::services::iss_service::IssService;
+use crate::utils::pg_lock::run_with_lock;
 
-pub async fn run_iss_scheduler(state: AppState) {
+pub fn run_iss_scheduler(state: AppState) {
     tokio::spawn(async move {
-        let service = IssService::new(&state).expect("Failed to init IssService");
-
         loop {
-            if let Err(e) = service.fetch_and_store(&state).await {
-                error!("ISS scheduler error: {:?}", e);
-            }
+            let pool = state.pool.clone();
+            let st = state.clone();
+
+            let _ = run_with_lock(&pool, 1001, || async move {
+                st.iss_service().fetch_and_store(&st).await?;
+                Ok(())
+            })
+            .await;
 
             tokio::time::sleep(Duration::from_secs(state.every_iss)).await;
         }

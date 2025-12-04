@@ -1,54 +1,61 @@
 use axum::extract::State;
-use axum::Json;
-use serde_json::json;
+use serde::Serialize;
 
 use crate::AppState;
-use crate::errors::{ApiError, ApiResult, ApiResponse};
+use crate::domain::iss::{IssLast, IssTrend};
+use crate::errors::{ApiError, ApiResult, ok};
 use crate::services::iss_service::IssService;
 
-pub async fn last_iss(State(st): State<AppState>) -> ApiResult<serde_json::Value> {
-    let service = IssService::new(&st).map_err(|e| ApiError::new("INIT_SERVICE", e.to_string()))?;
-    let last = service.last(&st).await.map_err(|e| ApiError::new("DB_ERROR", e.to_string()))?;
-
-    let data = match last {
-        Some(rec) => json!({
-            "id": rec.id,
-            "fetched_at": rec.fetched_at,
-            "source_url": rec.source_url,
-            "payload": rec.payload
-        }),
-        None => json!({"message": "no data"}),
-    };
-
-    Ok(Json(ApiResponse {
-        ok: true,
-        data: Some(data),
-        error: None,
-    }))
+#[derive(Serialize)]
+pub struct IssLastResponse {
+    pub last: Option<IssLast>,
 }
 
-pub async fn trigger_iss(State(st): State<AppState>) -> ApiResult<serde_json::Value> {
-    let service = IssService::new(&st).map_err(|e| ApiError::new("INIT_SERVICE", e.to_string()))?;
-    service
-        .fetch_and_store(&st)
+#[derive(Serialize)]
+pub struct IssTrendResponse {
+    pub trend: IssTrend,
+}
+
+// GET /last
+pub async fn last_iss(State(state): State<AppState>) -> ApiResult<IssLastResponse> {
+    let service = IssService::new(&state)
+        .map_err(|e| ApiError::internal(format!("Failed to init IssService: {e}")))?;
+
+    let last = service
+        .last(&state)
         .await
-        .map_err(|e| ApiError::new("UPSTREAM_ISS", e.to_string()))?;
+        .map_err(|e| ApiError::db(format!("Failed to load last ISS row: {e}")))?;
 
-    last_iss(State(st)).await
+    Ok(ok(IssLastResponse { last }))
 }
 
-pub async fn iss_trend(State(st): State<AppState>) -> ApiResult<serde_json::Value> {
-    let service = IssService::new(&st).map_err(|e| ApiError::new("INIT_SERVICE", e.to_string()))?;
+// GET /iss/trend
+pub async fn iss_trend(State(state): State<AppState>) -> ApiResult<IssTrendResponse> {
+    let service = IssService::new(&state)
+        .map_err(|e| ApiError::internal(format!("Failed to init IssService: {e}")))?;
+
     let trend = service
-        .trend(&st)
+        .trend(&state)
         .await
-        .map_err(|e| ApiError::new("DB_ERROR", e.to_string()))?;
+        .map_err(|e| ApiError::db(format!("Failed to compute ISS trend: {e}")))?;
 
-    let data = json!(trend);
+    Ok(ok(IssTrendResponse { trend }))
+}
 
-    Ok(Json(ApiResponse {
-        ok: true,
-        data: Some(data),
-        error: None,
-    }))
+// GET /fetch — ручной триггер обновления + возврат последнего значения
+pub async fn trigger_iss(State(state): State<AppState>) -> ApiResult<IssLastResponse> {
+    let service = IssService::new(&state)
+        .map_err(|e| ApiError::internal(format!("Failed to init IssService: {e}")))?;
+
+    service
+        .fetch_and_store(&state)
+        .await
+        .map_err(|e| ApiError::upstream(None, format!("Failed to fetch ISS data: {e}")))?;
+
+    let last = service
+        .last(&state)
+        .await
+        .map_err(|e| ApiError::db(format!("Failed to load last ISS row after fetch: {e}")))?;
+
+    Ok(ok(IssLastResponse { last }))
 }

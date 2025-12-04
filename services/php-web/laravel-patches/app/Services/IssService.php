@@ -2,23 +2,37 @@
 
 namespace App\Services;
 
-use App\DataSources\IssDataSource;
-use App\DTO\IssDTO;
+use GuzzleHttp\Client;
 
 class IssService
 {
-    protected IssDataSource $ds;
+    private Client $client;
+    private string $base;
 
-    public function __construct(IssDataSource $ds)
+    public function __construct()
     {
-        $this->ds = $ds;
+        $this->client = new Client(['timeout' => 5]);
+        $this->base = env('RUST_BASE', 'http://rust_iss:3000');
     }
 
-    public function loadData(): IssDTO
+    public function getIssData(): array
     {
-        $last  = $this->ds->getLast();
-        $trend = $this->ds->getTrend();
+        $last = $this->fetch('/last');
+        $trend = $this->fetch('/iss/trend');
 
-        return new IssDTO($last, $trend);
+        return [
+            'last' => $last['data'] ?? null,
+            'trend' => $trend['data'] ?? null
+        ];
+    }
+
+    private function fetch(string $url)
+    {
+        try {
+            $resp = $this->client->get($this->base . $url);
+            return json_decode($resp->getBody()->getContents(), true);
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'error' => ['message' => $e->getMessage()]];
+        }
     }
 }

@@ -17,4 +17,3 @@ pub async fn run_apod_scheduler(state: AppState) {
         }
     });
 }
-k
