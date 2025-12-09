@@ -2,34 +2,39 @@
 
 namespace App\Services;
 
+use App\DataSources\IssDataSource;
+use App\DataSources\JwstApiClient;
 use App\DataSources\RustApiClient;
 
 class DashboardService
 {
     public function __construct(
-        private RustApiClient $client
+        private IssDataSource $iss,
+        private JwstApiClient $jwst,
+        private RustApiClient $rust
     ) {}
 
-    public function loadIss(): DashboardDTO
+    /**
+     * Основной набор данных для Dashboard
+     */
+    public function getDashboardData(): array
     {
-        $iss = $this->client->get('/last');
+        $issLast  = $this->iss->getLast();
+        $issTrend = $this->iss->getTrend();
 
-        $metrics = new IssMetricDTO(
-            speed: $iss['payload']['velocity'] ?? null,
-            altitude: $iss['payload']['altitude'] ?? null,
-            neo_total: 0
-        );
+        $jwstFeed = $this->jwst->getImages([
+            "source" => "jpg",
+            "page" => 1,
+            "perPage" => 8
+        ]);
 
-    return new DashboardDTO(
-        iss: $iss,
-        trend: [],
-        metrics: $metrics,
-        jw_gallery: [],
-        jw_observation_raw: [],
-        jw_observation_summary: [],
-        jw_observation_images: [],
-        jw_observation_files: [],
-    );
-}
+        $spaceSummary = $this->rust->get("/space/summary");
 
+        return [
+            "iss"      => $issLast,
+            "trend"    => $issTrend,
+            "jwst"     => $jwstFeed["items"] ?? [],
+            "summary"  => $spaceSummary["data"] ?? [],
+        ];
+    }
 }

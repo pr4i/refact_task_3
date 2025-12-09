@@ -1,6 +1,8 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\OsdrController;
+
 
 Route::get('/', fn() => redirect('/dashboard'));
 
@@ -18,3 +20,5 @@ Route::get("/api/astro/events", [\App\Http\Controllers\AstroController::class, "
 use App\Http\Controllers\AstroController;
 Route::get('/page/{slug}', [\App\Http\Controllers\CmsController::class, 'page']);
 Route::get('/page/{slug}', [\App\Http\Controllers\CmsController::class, 'page']);
+Route::get('/osdr', [OsdrController::class, 'index'])->name('osdr.index');
+Route::get('/osdr/dashboard', [OsdrController::class, 'dashboard'])->name('osdr.dashboard');
