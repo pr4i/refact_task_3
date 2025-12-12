@@ -1,37 +1,28 @@
-use axum::{extract::State};
-use serde_json::Value;
-use axum::response::IntoResponse;
+use axum::{
+    extract::State,
+    response::{IntoResponse, Response},
+    Json,
+    http::StatusCode,
+};
 
-use crate::errors::{ok, err, ApiError};
-use crate::services::iss_service::IssService;
-use crate::AppState;
+use crate::{
+    app_state::AppState,
+    services::iss_service::IssService,
+    errors::ApiError,
+};
 
-pub async fn get_iss_last(State(state): State<AppState>)
-    -> Result<impl IntoResponse, ApiError>
-{
+pub async fn last(State(state): State<AppState>) -> Result<Response, ApiError> {
     let service = IssService::new(&state)?;
     let last = service.last(&state).await?;
-    Ok(ok(last))
+
+    Ok(match last {
+        Some(v) => Json(v).into_response(),
+        None => StatusCode::NO_CONTENT.into_response(),
+    })
 }
 
-pub async fn get_iss_trend(State(state): State<AppState>)
-    -> Result<impl IntoResponse, ApiError>
-{
+pub async fn trend(State(state): State<AppState>) -> Result<Response, ApiError> {
     let service = IssService::new(&state)?;
     let trend = service.trend(&state).await?;
-    Ok(ok(trend))
-}
-
-pub async fn trigger_iss_fetch(State(state): State<AppState>)
-    -> Result<impl IntoResponse, ApiError>
-{
-    let allowed = state.limiter.check("iss_fetch", 10, 60).await?;
-    if !allowed {
-        return Ok(err(ApiError::RateLimited));
-    }
-
-    let service = IssService::new(&state)?;
-    service.fetch_and_store(&state).await?;
-
-    Ok(ok(service.last(&state).await?))
+    Ok(Json(trend).into_response())
 }

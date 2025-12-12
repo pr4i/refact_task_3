@@ -1,39 +1,54 @@
-use anyhow::Result;
-use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
-use serde_json::Value;
+use crate::{
+    app_state::AppState,
+    clients::osdr_client::OsdrClient,
+    errors::ApiError,
+    repo::osdr_repo::OsdrRepo,
+};
 
-use crate::clients::osdr_client::OsdrClient;
-use crate::repo::osdr_repo::OsdrRepo;
-use crate::AppState;
+use chrono::{DateTime, TimeZone, Utc};
+use serde_json::Value;
+use std::time::Duration;
 
 pub struct OsdrService {
     client: OsdrClient,
 }
 
 impl OsdrService {
-    pub fn new(_state: &AppState) -> Result<Self> {
+    pub fn new(state: &AppState) -> Result<Self, ApiError> {
+        let timeout = Duration::from_secs(state.every_osdr);
+
         Ok(Self {
-            client: OsdrClient::new(std::time::Duration::from_secs(30))?,
+            client: OsdrClient::new(timeout)?,
         })
     }
 
-    pub async fn sync(&self, state: &AppState) -> Result<usize> {
-        let json = self.client.fetch(&state.nasa_url).await?;
+    pub async fn sync(&self, state: &AppState) -> Result<i64, ApiError> {
+        // fetch возвращает JSON Value
+        let json: Value = self.client.fetch(&state.nasa_url).await?;
 
-        let items = Self::extract_items(&json);
+        // ожидаем массив
+        let datasets = json.as_array().cloned().unwrap_or_default();
 
-        let mut written = 0usize;
+        let mut written = 0_i64;
 
-        for item in items {
-            let dataset_id =
-                s_pick(&item, &["dataset_id", "id", "uuid", "studyId", "accession", "osdr_id"]);
-            let title = s_pick(&item, &["title", "name", "label"]);
-            let status = s_pick(&item, &["status", "state", "lifecycle"]);
-            let updated =
-                t_pick(&item, &["updated", "updated_at", "modified", "lastUpdated", "timestamp"]);
+        for ds in datasets {
+            let dataset_id = ds.get("dataset_id").and_then(|v| v.as_str()).map(str::to_owned);
+            let title      = ds.get("title").and_then(|v| v.as_str()).map(str::to_owned);
+            let status     = ds.get("status").and_then(|v| v.as_str()).map(str::to_owned);
 
-            OsdrRepo::upsert_item(&state.pool, dataset_id, title, status, updated, item.clone())
-                .await?;
+            let updated_ts = ds.get("updated_at").and_then(|v| v.as_i64()).unwrap_or(0);
+            let updated_at: Option<DateTime<Utc>> =
+                Utc.timestamp_opt(updated_ts, 0).single();
+
+            OsdrRepo::upsert_item(
+                &state.pool,
+                dataset_id,
+                title,
+                status,
+                updated_at,
+                ds,
+            )
+            .await?;
 
             written += 1;
         }
@@ -41,52 +56,11 @@ impl OsdrService {
         Ok(written)
     }
 
-    pub async fn list(&self, state: &AppState, limit: i64) -> Result<Vec<Value>> {
-        OsdrRepo::list(&state.pool, limit).await
+    pub async fn list(
+        &self,
+        state: &AppState,
+        limit: i64,
+    ) -> Result<Vec<Value>, ApiError> {
+        Ok(OsdrRepo::list(&state.pool, limit).await?)
     }
-
-    fn extract_items(json: &Value) -> Vec<Value> {
-        if let Some(a) = json.as_array() {
-            a.clone()
-        } else if let Some(a) = json.get("items").and_then(|v| v.as_array()) {
-            a.clone()
-        } else if let Some(a) = json.get("results").and_then(|v| v.as_array()) {
-            a.clone()
-        } else {
-            vec![json.clone()]
-        }
-    }
-}
-
-fn s_pick(v: &Value, keys: &[&str]) -> Option<String> {
-    for k in keys {
-        if let Some(x) = v.get(*k) {
-            if let Some(s) = x.as_str() {
-                if !s.is_empty() {
-                    return Some(s.to_string());
-                }
-            } else if x.is_number() {
-                return Some(x.to_string());
-            }
-        }
-    }
-    None
-}
-
-fn t_pick(v: &Value, keys: &[&str]) -> Option<DateTime<Utc>> {
-    for k in keys {
-        if let Some(x) = v.get(*k) {
-            if let Some(s) = x.as_str() {
-                if let Ok(dt) = s.parse::<DateTime<Utc>>() {
-                    return Some(dt);
-                }
-                if let Ok(ndt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
-                    return Some(Utc.from_utc_datetime(&ndt));
-                }
-            } else if let Some(n) = x.as_i64() {
-                return Some(Utc.timestamp(n, 0));
-            }
-        }
-    }
-    None
 }

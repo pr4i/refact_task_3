@@ -1,66 +1,88 @@
-use axum::{
-    routing::get,
-    Router,
-    Json,
-    extract::State,
-};
-use chrono::Utc;
+use axum::Router;
 use std::net::SocketAddr;
-use tower_http::trace::TraceLayer;
+use tower_http::cors::CorsLayer;
+use tracing::{info, error};
+
+use crate::routes::{
+    iss_routes,
+    osdr_routes,
+    space_routes,
+};
+
 
 mod routes;
 mod handlers;
 mod services;
-mod clients;
 mod repo;
-mod domain;
 mod config;
-mod scheduler;
 mod cache;
 mod rate_limit;
-mod utils;
+mod scheduler;
+mod errors;
+mod clients;
+mod app_state;
+mod domain;
 
-use crate::routes::{
-    iss_routes::iss_router,
-    osdr_routes::osdr_router,
-    space_routes::space_router,
-};
-
-use crate::config::Config;
-use crate::AppState;
-
-#[derive(Debug, serde::Serialize)]
-struct Health {
-    status: &'static str,
-    now: chrono::DateTime<Utc>,
-}
+use crate::app_state::AppState;
+use crate::cache::RedisCache;
+use crate::rate_limit::RateLimiter;
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt().init();
+async fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter("info")
+        .init();
 
-    let cfg = Config::from_env()?;
+    if let Err(e) = run().await {
+        error!("FATAL ERROR in rust_iss: {e:?}");
+        std::process::exit(1);
+    }
+}
 
-    let state = AppState::new(&cfg).await?;
-    
-    // запускаем планировщики
-    scheduler::start_all(state.clone());
+async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    info!("(1) Loading config from env...");
+    let cfg = config::Config::from_env()?;
+    info!("(1 OK) Config loaded");
 
-    // собираем роутер
+    info!("(2) Connecting to Postgres...");
+    let pool = sqlx::PgPool::connect(&cfg.database_url).await?;
+    info!("(2 OK) Connected to Postgres");
+
+    info!("(3) Creating Redis pool...");
+    let redis = deadpool_redis::Config::from_url(cfg.redis_url.clone())
+        .create_pool(Some(deadpool_redis::Runtime::Tokio1))?;
+    info!("(3 OK) Redis pool created");
+
+    info!("(4) Building AppState...");
+    let limiter = RateLimiter::new(redis.clone());
+    let cache   = RedisCache::new(redis.clone());
+
+    let port = cfg.port;
+
+    let state = AppState::new(
+        pool,
+        redis,
+        cfg.clone(),
+        limiter,
+        cache,
+    );
+    info!("(4 OK) AppState ready");
+
+
+    tokio::spawn(scheduler::start_schedulers(state.clone()));
+
+    info!("(5) Building router...");
     let app = Router::new()
-        .route("/health", get(|| async {
-            Json(Health { status: "ok", now: Utc::now() })
-        }))
-        .merge(iss_router())
-        .merge(osdr_router())
-        .merge(space_router())
-        .layer(TraceLayer::new_for_http())
-        .with_state(state);
+        .merge(iss_routes::router())
+        .merge(osdr_routes::router())
+        .merge(space_routes::router())
+        .with_state(state.clone())
+        .layer(CorsLayer::permissive());
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], cfg.port));
-    println!("Backend running on http://{}", addr);
 
-    // ✔ AXUM 0.6 правильный запуск сервера
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    info!("🚀 Rust server starting on http://{addr}");
+
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await?;

@@ -3,21 +3,33 @@ version: "3.9"
 services:
   db:
     image: postgres:15
+    container_name: db
     restart: always
     environment:
       POSTGRES_USER: monouser
       POSTGRES_PASSWORD: monopass
       POSTGRES_DB: monolith
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U monouser -d monolith"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7
+    container_name: redis
     restart: always
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   rust_iss:
     build:
@@ -25,16 +37,29 @@ services:
     container_name: rust_iss
     restart: always
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
-      - RUST_LOG=info
-      - DATABASE_URL=postgres://monouser:monopass@db:5432/monolith
-      - REDIS_URL=redis://redis:6379
-      # внешние API (можешь подставить свои ключи/URL)
-      - NASA_API_URL=https://api.nasa.gov
-      - NASA_API_KEY=DEMO_KEY
-      - WHERE_ISS_URL=https://api.wheretheiss.at/v1/satellites/25544
+      DATABASE_URL: postgres://monouser:monopass@db:5432/monolith
+      REDIS_URL: redis://redis:6379
+
+      FALLBACK_ISS_URL: https://api.wheretheiss.at/v1/satellites/25544
+
+      NASA_URL: https://api.nasa.gov
+      NASA_KEY: DEMO_KEY
+
+      HTTP_TIMEOUT: 10
+      PORT: 3000
+
+      EVERY_ISS: 30
+      EVERY_OSDR: 300
+      EVERY_APOD: 3600
+      EVERY_NEO: 3600
+      EVERY_DONKI: 3600
+      EVERY_SPACEX: 600
+
     ports:
       - "3000:3000"
 
@@ -44,26 +69,25 @@ services:
     container_name: php
     restart: always
     depends_on:
-      - db
-      - rust_iss
+      db:
+        condition: service_healthy
+      rust_iss:
+        condition: service_started
     environment:
-      # Laravel базовые настройки
-      - APP_ENV=local
-      - APP_DEBUG=true
-      - APP_URL=http://localhost
-      # подключение к Postgres
-      - DB_CONNECTION=pgsql
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_DATABASE=monolith
-      - DB_USERNAME=monouser
-      - DB_PASSWORD=monopass
-      # адрес Rust-сервиса для DataSources
-      - RUST_BASE=http://rust_iss:3000
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:8080
+
+      DB_CONNECTION: pgsql
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_DATABASE: monolith
+      DB_USERNAME: monouser
+      DB_PASSWORD: monopass
+
+      RUST_ISS_URL: http://rust_iss:3000
     volumes:
-      # сюда Laravel положит скелет проекта; ты сможешь редактировать .env, views и т.п.
       - ./services/php-web/app:/var/www/html
-      - ./services/php-web/laravel-patches:/opt/laravel-patches:ro
 
   nginx:
     image: nginx:alpine
@@ -72,8 +96,8 @@ services:
     depends_on:
       - php
     volumes:
-      - ./services/php-web/app:/var/www/html:ro
-      - ./services/php-web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    - ./services/php-web/app:/var/www/html:ro
+    - ./services/php-web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
       - "8080:80"
 
@@ -83,14 +107,15 @@ services:
     container_name: legacy
     restart: always
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
-      - CSV_OUT_DIR=/data/csv
-      - PGHOST=db
-      - PGPORT=5432
-      - PGUSER=monouser
-      - PGPASSWORD=monopass
-      - PGDATABASE=monolith
-      - GEN_PERIOD_SEC=300
+      CSV_OUT_DIR: /data/csv
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: monouser
+      PGPASSWORD: monopass
+      PGDATABASE: monolith
+      GEN_PERIOD_SEC: "300"
     volumes:
       - ./data/legacy:/data/csv

@@ -1,34 +1,21 @@
-use std::time::Duration;
+use crate::{app_state::AppState, services::space_service::SpaceService};
+use tokio::time::{sleep, Duration};
+use tracing::{info, error};
 
-use tracing::error;
-
-use crate::services::space_service::SpaceService;
-use crate::utils::pg_lock::run_with_lock;
-use crate::AppState;
-
-pub fn run_spacex_scheduler(state: AppState) {
-    tokio::spawn(async move {
-        let pool = state.pool.clone();
-
-        loop {
-            let st = state.clone();
-
-            if let Err(e) = run_with_lock(&pool, 1007, move || {
-                let st = st.clone();
-                async move {
-                    let svc = SpaceService::new()?;
-                    if let Err(err) = svc.refresh(&st, "spacex").await {
-                        error!("SpaceX refresh error: {:?}", err);
-                    }
-                    Ok(())
-                }
-            })
-            .await
-            {
-                error!("SpaceX scheduler lock error: {:?}", e);
-            }
-
-            tokio::time::sleep(Duration::from_secs(state.every_spacex)).await;
+pub async fn start(state: AppState) {
+    let svc = match SpaceService::new(&state) {
+        Ok(v) => v,
+        Err(e) => {
+            error!("SpaceX scheduler init failed: {e}");
+            return;
         }
-    });
+    };
+
+    loop {
+        if let Err(e) = svc.refresh(&state, "spacex").await {
+            info!("SpaceX scheduler error: {}", e);
+        }
+
+        sleep(Duration::from_secs(state.every_spacex)).await;
+    }
 }

@@ -1,37 +1,21 @@
-use std::time::Duration;
+use crate::{app_state::AppState, services::iss_service::IssService};
+use tokio::time::{sleep, Duration};
+use tracing::{info, error};
 
-use tracing::error;
-
-use crate::services::iss_service::IssService;
-use crate::utils::pg_lock::run_with_lock;
-use crate::AppState;
-
-pub fn run_iss_scheduler(state: AppState) {
-    // Запускаем отдельную таску
-    tokio::spawn(async move {
-        let pool = state.pool.clone();
-
-        loop {
-            let st = state.clone();
-
-            // Берём advisory lock и выполняем работу
-            if let Err(e) = run_with_lock(&pool, 1001, move || {
-                let st = st.clone();
-                async move {
-                    let svc = IssService::new(&st)?;
-                    if let Err(err) = svc.fetch_and_store(&st).await {
-                        error!("ISS scheduler error: {:?}", err);
-                    }
-                    // ВАЖНО: вернуть Result<()>, иначе тип не сойдётся
-                    Ok(())
-                }
-            })
-            .await
-            {
-                error!("ISS scheduler lock error: {:?}", e);
-            }
-
-            tokio::time::sleep(Duration::from_secs(state.every_iss)).await;
+pub async fn start(state: AppState) {
+    let svc = match IssService::new(&state) {
+        Ok(v) => v,
+        Err(e) => {
+            error!("ISS scheduler init failed: {e}");
+            return;
         }
-    });
+    };
+
+    loop {
+        if let Err(e) = svc.fetch_and_store(&state).await {
+            info!("ISS scheduler error: {}", e);
+        }
+
+        sleep(Duration::from_secs(state.every_iss)).await;
+    }
 }

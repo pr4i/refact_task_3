@@ -1,12 +1,17 @@
-use anyhow::Result;
-use serde_json::Value;
-
-use crate::clients::{
-    apod_client::ApodClient, donki_client::DonkiClient, neo_client::NeoClient,
-    spacex_client::SpacexClient,
+use crate::{
+    app_state::AppState,
+    clients::{
+        apod_client::ApodClient,
+        neo_client::NeoClient,
+        donki_client::DonkiClient,
+        spacex_client::SpacexClient,
+    },
+    repo::space_cache_repo::SpaceCacheRepo,
+    errors::ApiError,
 };
-use crate::repo::space_cache_repo::SpaceCacheRepo;
-use crate::AppState;
+
+use serde_json::Value;
+use std::time::Duration;
 
 pub struct SpaceService {
     apod: ApodClient,
@@ -16,16 +21,22 @@ pub struct SpaceService {
 }
 
 impl SpaceService {
-    pub fn new() -> Result<Self> {
+    pub fn new(state: &AppState) -> Result<Self, ApiError> {
+        let timeout = Duration::from_secs(state.every_spacex);
+
         Ok(Self {
-            apod: ApodClient::new(std::time::Duration::from_secs(30))?,
-            neo: NeoClient::new(std::time::Duration::from_secs(30))?,
-            donki: DonkiClient::new(std::time::Duration::from_secs(30))?,
-            spacex: SpacexClient::new(std::time::Duration::from_secs(30))?,
+            apod: ApodClient::new(timeout)?,
+            neo: NeoClient::new(timeout)?,
+            donki: DonkiClient::new(timeout)?,
+            spacex: SpacexClient::new(timeout)?,
         })
     }
 
-    pub async fn refresh(&self, state: &AppState, src: &str) -> Result<()> {
+    pub async fn refresh(
+        &self,
+        state: &AppState,
+        src: &str,
+    ) -> Result<(), ApiError> {
         match src {
             "apod" => {
                 let v = self.apod.fetch(&state.nasa_key).await?;
@@ -49,29 +60,31 @@ impl SpaceService {
             }
             _ => {}
         }
+
         Ok(())
     }
 
-    pub async fn latest(&self, state: &AppState, src: &str) -> Result<Option<Value>> {
-        SpaceCacheRepo::latest(&state.pool, src).await
+    pub async fn latest(
+        &self,
+        state: &AppState,
+        src: &str,
+    ) -> Result<Option<Value>, ApiError> {
+        Ok(SpaceCacheRepo::latest(&state.pool, src).await?)
     }
 
-    pub async fn summary(&self, state: &AppState) -> Result<Value> {
-        let apod = self.latest(state, "apod").await?;
-        let neo = self.latest(state, "neo").await?;
-        let flr = self.latest(state, "flr").await?;
-        let cme = self.latest(state, "cme").await?;
-        let spacex = self.latest(state, "spacex").await?;
-
+    pub async fn summary(
+        &self,
+        state: &AppState,
+    ) -> Result<Value, ApiError> {
         let osdr_count = SpaceCacheRepo::count_osdr(&state.pool).await?;
 
         Ok(serde_json::json!({
-            "apod": apod,
-            "neo": neo,
-            "flr": flr,
-            "cme": cme,
-            "spacex": spacex,
-            "osdr_count": osdr_count
+            "osdr_count": osdr_count,
+            "apod":   SpaceCacheRepo::latest(&state.pool, "apod").await?,
+            "neo":    SpaceCacheRepo::latest(&state.pool, "neo").await?,
+            "flr":    SpaceCacheRepo::latest(&state.pool, "flr").await?,
+            "cme":    SpaceCacheRepo::latest(&state.pool, "cme").await?,
+            "spacex": SpaceCacheRepo::latest(&state.pool, "spacex").await?,
         }))
     }
 }

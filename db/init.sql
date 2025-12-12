@@ -1,4 +1,6 @@
+-- =====================================================
 -- Basic schema
+-- =====================================================
 
 CREATE TABLE IF NOT EXISTS iss_fetch_log (
     id BIGSERIAL PRIMARY KEY,
@@ -22,10 +24,36 @@ CREATE TABLE IF NOT EXISTS cms_pages (
     body TEXT NOT NULL
 );
 
--- Seed with deliberately unsafe content for XSS practice
+-- =====================================================
+-- Cache tables for rust_iss schedulers
+-- =====================================================
+-- Используются для актуального состояния (last / cache),
+-- из них читают REST-эндпойнты (/iss/last и др.)
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS space_cache (
+    id BIGSERIAL PRIMARY KEY,
+    source TEXT NOT NULL UNIQUE,
+    key TEXT,
+    payload JSONB NOT NULL,
+    fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_space_cache_fetched_at
+    ON space_cache (fetched_at DESC);
+
+
+CREATE INDEX IF NOT EXISTS idx_space_cache_source
+    ON space_cache (source);
+
+
+-- =====================================================
+-- Seed data for CMS (XSS practice)
+-- =====================================================
+
 INSERT INTO cms_pages(slug, title, body)
 VALUES
 ('welcome', 'Добро пожаловать', '<h3>Демо контент</h3><p>Этот текст хранится в БД</p>'),
-('unsafe', 'Небезопасный пример', '<script>console.log("XSS training")
-</script><p>Если вы видите всплывашку значит защита не работает</p>')
+('unsafe', 'Небезопасный пример', '<script>console.log("XSS training")</script>
+<p>Если вы видите всплывашку значит защита не работает</p>')
 ON CONFLICT DO NOTHING;

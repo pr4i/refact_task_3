@@ -1,26 +1,23 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 set -e
-
-APP_DIR="/var/www/html"
-PATCH_DIR="/opt/laravel-patches"
 
 echo "[php] init start"
 
-if [ ! -f "$APP_DIR/artisan" ]; then
-  echo "[php] creating laravel skeleton"
-  composer create-project --no-interaction --prefer-dist laravel/laravel:^11 "$APP_DIR"
-  cp "$APP_DIR/.env.example" "$APP_DIR/.env" || true
-  sed -i 's|APP_NAME=Laravel|APP_NAME=ISSOSDR|g' "$APP_DIR/.env" || true
-  php "$APP_DIR/artisan" key:generate || true
+# 1. Если в каталоге нет composer.json – создаём новый проект Laravel
+if [ ! -f composer.json ]; then
+  echo "[php] no composer.json, creating new Laravel project..."
+  composer create-project --no-interaction --prefer-dist laravel/laravel .
 fi
 
-if [ -d "$PATCH_DIR" ]; then
-  echo "[php] applying patches"
-  rsync -a "$PATCH_DIR/" "$APP_DIR/"
+# 2. Накатываем патчи из /opt/laravel-patches (если есть)
+if [ -d /opt/laravel-patches ]; then
+  echo "[php] applying laravel patches..."
+  rsync -a /opt/laravel-patches/ /var/www/html/
 fi
 
-chown -R www-data:www-data "$APP_DIR"
-chmod -R 775 "$APP_DIR/storage" "$APP_DIR/bootstrap/cache" || true
+# 3. Устанавливаем зависимости (на случай, если что-то поменялось)
+echo "[php] installing composer deps..."
+composer install --no-interaction --no-progress --prefer-dist
 
-echo "[php] starting php-fpm"
-php-fpm -F
+echo "[php] starting php-fpm..."
+exec php-fpm

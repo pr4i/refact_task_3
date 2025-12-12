@@ -1,28 +1,25 @@
-# Build stage
-FROM rust:1-bullseye AS build
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        pkg-config \
-        libssl-dev \
-        ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# ---- BUILD ----
+FROM rustlang/rust:nightly AS build
 
 WORKDIR /app
 
-COPY Cargo.toml ./
+COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 
 RUN cargo build --release
 
-# Runtime stage
-FROM debian:bullseye-slim
+# ---- RUNTIME ----
+FROM debian:12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates \
+    ca-certificates \
+    libssl3 \
+    libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY --from=build /app/target/release/rust_iss /app/rust_iss
 
-CMD ["./rust_iss"]
+EXPOSE 3000
+CMD ["/app/rust_iss"]

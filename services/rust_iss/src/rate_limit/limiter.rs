@@ -1,6 +1,6 @@
 use anyhow::Result;
-use deadpool_redis::{redis::AsyncCommands, Config, Pool, Runtime};
-use std::time::{SystemTime, UNIX_EPOCH};
+use deadpool_redis::{Pool, redis::AsyncCommands};
+use std::time::Duration;
 
 #[derive(Clone)]
 pub struct RateLimiter {
@@ -8,40 +8,30 @@ pub struct RateLimiter {
 }
 
 impl RateLimiter {
-    pub fn new(url: &str) -> Result<Self> {
-        let mut cfg = Config::default();
-        cfg.url = Some(url.to_string());
-        let pool = cfg.create_pool(Some(Runtime::Tokio1))?;
-        Ok(Self { pool })
+    pub fn new(pool: Pool) -> Self {
+        Self { pool }
     }
 
-    async fn conn(&self) -> Result<deadpool_redis::Connection> {
-        Ok(self.pool.get().await?)
-    }
+    /// Проверяет лимит: max_requests за window секунд
+    pub async fn check(
+        &self,
+        key: &str,
+        max_requests: u32,
+        window_seconds: u64
+    ) -> Result<bool> {
+        let mut conn = self.pool.get().await?;
 
-    pub async fn check(&self, key: &str, limit: u64, window_sec: u64) -> Result<bool> {
-        let mut conn = self.conn().await?;
+        let redis_key = format!("rate_limit:{}", key);
 
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)?
-            .as_secs() as i64;
+        // увеличиваем счетчик
+        let count: i32 = conn.incr(&redis_key, 1).await?;
 
-        let bucket = now / (window_sec as i64);
-        let redis_key = format!("ratelimit:{}:{}", key, bucket);
-
-        let count: i64 = deadpool_redis::redis::cmd("INCR")
-            .arg(&redis_key)
-            .query_async(&mut conn)
-            .await?;
-
+        // если ключ создан впервые — ставим TTL
         if count == 1 {
-            let _: () = deadpool_redis::redis::cmd("EXPIRE")
-                .arg(&redis_key)
-                .arg(window_sec as i64)
-                .query_async(&mut conn)
-                .await?;
+            let _: () = conn.expire(&redis_key, window_seconds as i64).await?;
+
         }
 
-        Ok(count as u64 <= limit)
+        Ok(count <= max_requests as i32)
     }
 }

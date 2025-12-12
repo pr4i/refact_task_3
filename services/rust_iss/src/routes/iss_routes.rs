@@ -1,9 +1,11 @@
 use axum::{Router, routing::get};
-use crate::handlers::iss_handlers::*;
+use crate::{
+    AppState,
+    handlers::iss_handlers::{last, trend},
+};
 
-pub fn iss_router() -> Router {
+pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/iss/last", get(get_iss_last))
-        .route("/iss/trend", get(get_iss_trend))
-        .route("/iss/fetch", get(trigger_iss_fetch))
+        .route("/iss/last", get(last))
+        .route("/iss/trend", get(trend))
 }
