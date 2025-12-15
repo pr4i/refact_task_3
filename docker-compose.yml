@@ -46,9 +46,8 @@ services:
       REDIS_URL: redis://redis:6379
 
       FALLBACK_ISS_URL: https://api.wheretheiss.at/v1/satellites/25544
-
-      NASA_URL: https://api.nasa.gov
-      NASA_KEY: DEMO_KEY
+      NASA_URL: https://visualization.osdr.nasa.gov/biodata/api/v2/datasets/?format=json
+      NASA_KEY: 3Lp1g8dksAXpuVlN4DeaILIkYbZI26rcWrQy1YSn
 
       HTTP_TIMEOUT: 10
       PORT: 3000
@@ -59,7 +58,9 @@ services:
       EVERY_NEO: 3600
       EVERY_DONKI: 3600
       EVERY_SPACEX: 600
-
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     ports:
       - "3000:3000"
 
@@ -86,8 +87,14 @@ services:
       DB_PASSWORD: monopass
 
       RUST_ISS_URL: http://rust_iss:3000
+
+      # чтобы Laravel не лез в таблицу cache (и не падал)
+      CACHE_STORE: file
+      SESSION_DRIVER: file
     volumes:
       - ./services/php-web/app:/var/www/html
+      - laravel_storage:/var/www/html/storage
+      - laravel_cache:/var/www/html/bootstrap/cache
 
   nginx:
     image: nginx:alpine
@@ -96,8 +103,9 @@ services:
     depends_on:
       - php
     volumes:
-    - ./services/php-web/app:/var/www/html:ro
-    - ./services/php-web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./services/php-web/app:/var/www/html:ro
+      - laravel_storage:/var/www/html/storage:ro
+      - ./services/php-web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
       - "8080:80"
 
@@ -119,3 +127,7 @@ services:
       GEN_PERIOD_SEC: "300"
     volumes:
       - ./data/legacy:/data/csv
+
+volumes:
+  laravel_storage:
+  laravel_cache:

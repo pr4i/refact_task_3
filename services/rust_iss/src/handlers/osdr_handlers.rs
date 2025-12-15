@@ -1,8 +1,9 @@
 use axum::{
-    extract::State,
-    response::IntoResponse,
+    extract::{Query, State},
     Json,
 };
+use serde::Deserialize;
+use serde_json::Value;
 
 use crate::{
     app_state::AppState,
@@ -10,31 +11,31 @@ use crate::{
     services::osdr_service::OsdrService,
 };
 
-/// Синхронизировать OSDR с NASA
-pub async fn osdr_sync(
-    State(state): State<AppState>,
-) -> Result<impl IntoResponse, ApiError> {
-    let svc = OsdrService::new(&state)?;
-    let written = svc.sync(&state).await?;
-
-    Ok(Json(serde_json::json!({
-        "written": written
-    })))
+#[derive(Deserialize)]
+pub struct ListParams {
+    pub limit: Option<i64>,
 }
 
-/// Список последних записей OSDR
+pub async fn osdr_sync(State(state): State<AppState>) -> Result<Json<Value>, ApiError> {
+    let svc = OsdrService::new(&state)?;
+    let written = svc.sync(&state).await?;
+    Ok(Json(serde_json::json!({ "written": written })))
+}
+
 pub async fn osdr_list(
     State(state): State<AppState>,
-) -> Result<impl IntoResponse, ApiError> {
-    let limit = std::env::var("OSDR_LIST_LIMIT")
-        .ok()
-        .and_then(|s| s.parse::<i64>().ok())
-        .unwrap_or(20);
-
+    Query(p): Query<ListParams>,
+) -> Result<Json<Value>, ApiError> {
     let svc = OsdrService::new(&state)?;
-    let items = svc.list(&state, limit).await?;
 
-    Ok(Json(serde_json::json!({
-        "items": items
-    })))
+    let mut limit = p.limit.unwrap_or(20);
+    if limit < 1 {
+        limit = 1;
+    }
+    if limit > 200 {
+        limit = 200;
+    }
+
+    let items = svc.list(&state, limit).await?;
+    Ok(Json(serde_json::json!({ "items": items })))
 }

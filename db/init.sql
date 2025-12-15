@@ -24,6 +24,19 @@ CREATE TABLE IF NOT EXISTS cms_pages (
     body TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS osdr_items (
+  id BIGSERIAL PRIMARY KEY,
+  dataset_id TEXT UNIQUE,
+  title TEXT,
+  status TEXT,
+  updated_at TIMESTAMPTZ,
+  inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  raw JSONB NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_osdr_items_inserted_at ON osdr_items(inserted_at DESC);
+
+
 -- =====================================================
 -- Cache tables for rust_iss schedulers
 -- =====================================================

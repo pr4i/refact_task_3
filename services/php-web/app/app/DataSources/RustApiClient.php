@@ -6,19 +6,26 @@ use Illuminate\Support\Facades\Http;
 
 class RustApiClient
 {
-    protected string $base;
+    private string $base;
 
     public function __construct()
     {
-        $this->base = env('RUST_BASE', 'http://rust_iss:3000');
+        $this->base = config('services.rust_iss.url', 'http://rust_iss:3000');
     }
 
     public function get(string $path): array
     {
-        $response = Http::timeout(3)
-            ->retry(2, 200)
-            ->get($this->base . $path);
+        try {
+            $resp = Http::baseUrl($this->base)
+                ->acceptJson()
+                ->timeout(2)       // ключевое!
+                ->retry(1, 150)    // 1 повтор и всё
+                ->get($path);
 
-        return $response->json() ?? [];
+            return $resp->json() ?? [];
+        } catch (\Throwable $e) {
+            // важно: возвращаем быстро, чтобы nginx не ждал
+            return ['ok' => false, 'error' => ['message' => $e->getMessage()]];
+        }
     }
 }

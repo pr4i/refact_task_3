@@ -7,18 +7,32 @@ pub struct SpaceCacheRepo;
 
 impl SpaceCacheRepo {
     pub async fn write(pool: &PgPool, source: &str, payload: Value) -> Result<()> {
-        sqlx::query("INSERT INTO space_cache(source, payload) VALUES ($1,$2)")
-            .bind(source)
-            .bind(payload)
-            .execute(pool)
-            .await?;
+        sqlx::query(
+            r#"
+            INSERT INTO space_cache (source, payload, fetched_at)
+            VALUES ($1, $2, NOW())
+            ON CONFLICT (source) DO UPDATE
+            SET payload = EXCLUDED.payload,
+                fetched_at = EXCLUDED.fetched_at
+            "#,
+        )
+        .bind(source)
+        .bind(payload)
+        .execute(pool)
+        .await?;
+
         Ok(())
     }
 
     pub async fn latest(pool: &PgPool, src: &str) -> Result<Option<Value>> {
         let row = sqlx::query(
-            "SELECT fetched_at, payload FROM space_cache
-             WHERE source = $1 ORDER BY id DESC LIMIT 1",
+            r#"
+            SELECT fetched_at, payload
+            FROM space_cache
+            WHERE source = $1
+            ORDER BY fetched_at DESC
+            LIMIT 1
+            "#,
         )
         .bind(src)
         .fetch_optional(pool)

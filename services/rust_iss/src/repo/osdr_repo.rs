@@ -2,6 +2,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use sqlx::{PgPool, Row};
+use crate::errors::ApiError;
 
 pub struct OsdrRepo;
 
@@ -13,44 +14,35 @@ impl OsdrRepo {
         status: Option<String>,
         updated_at: Option<DateTime<Utc>>,
         raw: Value,
-    ) -> Result<()> {
-        if let Some(ds) = dataset_id.clone() {
-            sqlx::query(
-                r#"
-                INSERT INTO osdr_items(dataset_id, title, status, updated_at, raw)
-                VALUES($1,$2,$3,$4,$5)
-                ON CONFLICT (dataset_id) DO UPDATE
-                SET title=EXCLUDED.title,
-                    status=EXCLUDED.status,
-                    updated_at=EXCLUDED.updated_at,
-                    raw=EXCLUDED.raw
-            "#,
-            )
-            .bind(ds)
-            .bind(title)
-            .bind(status)
-            .bind(updated_at)
-            .bind(raw)
-            .execute(pool)
-            .await?;
-        } else {
-            sqlx::query(
-                r#"
-                INSERT INTO osdr_items(dataset_id, title, status, updated_at, raw)
-                VALUES($1,$2,$3,$4,$5)
-            "#,
-            )
-            .bind::<Option<String>>(None)
-            .bind(title)
-            .bind(status)
-            .bind(updated_at)
-            .bind(raw)
-            .execute(pool)
-            .await?;
+    ) -> Result<(), ApiError> {
+        let dataset_id = dataset_id.unwrap_or_default();
+        if dataset_id.is_empty() {
+            return Ok(());
         }
+
+        sqlx::query(
+            r#"
+            INSERT INTO osdr_items (dataset_id, title, status, updated_at, raw)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (dataset_id) DO UPDATE
+            SET title      = EXCLUDED.title,
+                status     = EXCLUDED.status,
+                updated_at = EXCLUDED.updated_at,
+                raw        = EXCLUDED.raw,
+                inserted_at = NOW()
+            "#
+        )
+        .bind(dataset_id)
+        .bind(title)
+        .bind(status)
+        .bind(updated_at)
+        .bind(raw)
+        .execute(pool)
+        .await?;
 
         Ok(())
     }
+
 
     pub async fn list(pool: &PgPool, limit: i64) -> Result<Vec<Value>> {
         let rows = sqlx::query(
