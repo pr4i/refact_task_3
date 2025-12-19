@@ -21,6 +21,23 @@ begin
   Result := minV + Random * (maxV - minV);
 end;
 
+function PickMode(): string;
+begin
+  case Random(3) of
+    0: Result := 'AUTO';
+    1: Result := 'MANUAL';
+    else Result := 'SAFE';
+  end;
+end;
+
+function PickBoolText(): string;
+begin
+  if Random < 0.80 then
+    Result := 'ИСТИНА'
+  else
+    Result := 'ЛОЖЬ';
+end;
+
 procedure GenerateAndCopy();
 var
   outDir, fn, fullpath: string;
@@ -28,6 +45,11 @@ var
   copyCmd: string;
   f: TextFile;
   ts: string;
+
+  okText, modeText: string;
+  counter: Integer;
+  voltage, temp: Double;
+  recordedAt: string;
 begin
   outDir := GetEnvDef('CSV_OUT_DIR', '/data/csv');
 
@@ -35,14 +57,26 @@ begin
   fn := 'telemetry_' + ts + '.csv';
   fullpath := IncludeTrailingPathDelimiter(outDir) + fn;
 
+  // ----- генерим значения -----
+  recordedAt := FormatDateTime('yyyy-mm-dd hh:nn:ss', Now);
+  voltage := RandFloat(3.2, 12.6);
+  temp := RandFloat(-50.0, 80.0);
+
+  okText := PickBoolText();     // ИСТИНА/ЛОЖЬ
+  modeText := PickMode();       // строка
+  counter := Random(1000);      // целое число
+
   // ----- пишем CSV -----
   AssignFile(f, fullpath);
   Rewrite(f);
-  Writeln(f, 'recorded_at,voltage,temp,source_file');
+  Writeln(f, 'recorded_at,voltage,temp,is_ok,mode,counter,source_file');
   Writeln(f,
-    FormatDateTime('yyyy-mm-dd hh:nn:ss', Now) + ',' +
-    FormatFloat('0.00', RandFloat(3.2, 12.6)) + ',' +
-    FormatFloat('0.00', RandFloat(-50.0, 80.0)) + ',' +
+    recordedAt + ',' +
+    FormatFloat('0.00', voltage) + ',' +
+    FormatFloat('0.00', temp) + ',' +
+    okText + ',' +
+    modeText + ',' +
+    IntToStr(counter) + ',' +
     fn
   );
   CloseFile(f);
@@ -63,7 +97,7 @@ begin
     ' user=' + pguser +
     ' dbname=' + pgdb +
     '" -c ' +
-    '"\copy telemetry_legacy(recorded_at, voltage, temp, source_file) ' +
+    '"\copy telemetry_legacy(recorded_at, voltage, temp, is_ok, mode, counter, source_file) ' +
     'FROM ''' + fullpath + ''' WITH (FORMAT csv, HEADER true)"';
 
   WriteLn('[legacy] exec: ', copyCmd);

@@ -1,11 +1,37 @@
 <?php
+
 namespace App\Http\Controllers;
+
 use Illuminate\Support\Facades\DB;
 
-class CmsController extends Controller {
-  public function page(string $slug) {
-    $row = DB::selectOne("SELECT title, content FROM cms_blocks WHERE slug = ? AND is_active = TRUE", [$slug]);
-    if (!$row) abort(404);
-    return response()->view('cms.page', ['title' => $row->title, 'html' => $row->content]);
-  }
+class CmsController extends Controller
+{
+    // Роут: /cms/{slug?}
+    public function page(?string $slug = null)
+    {
+        // /cms -> список страниц
+        if (!$slug) {
+            $pages = DB::table('cms_pages')
+                ->select(['slug', 'title'])     // updated_at у тебя НЕТ
+                ->orderBy('title', 'asc')
+                ->get();
+
+            return view('cms.index', [
+                'pages' => $pages,
+            ]);
+        }
+
+        // /cms/{slug} -> конкретная страница
+        $page = DB::table('cms_pages')
+            ->where('slug', $slug)
+            ->first();
+
+        if (!$page) {
+            abort(404);
+        }
+
+        return view('cms.page', [
+            'page' => $page,
+        ]);
+    }
 }

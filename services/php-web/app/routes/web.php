@@ -2,14 +2,16 @@
 
 use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\IssController;
 use App\Http\Controllers\OsdrController;
 use App\Http\Controllers\AstroController;
+use App\Http\Controllers\TelemetryController;
 use App\Http\Controllers\JwstController;
 use App\Http\Controllers\CmsController;
-use App\Http\Controllers\TelemetryController;
+use App\Http\Controllers\LegacyCsvController;
 
 use App\DataSources\RustApiClient;
 use App\Services\OsdrService;
@@ -35,7 +37,13 @@ Route::get('/telemetry', [TelemetryController::class, 'index'])->name('telemetry
 
 Route::get('/jwst', [JwstController::class, 'index'])->name('jwst.index');
 
-Route::get('/cms/{slug?}', [CmsController::class, 'page'])->name('cms.page');
+/*
+|--------------------------------------------------------------------------
+| Legacy CSV (ВАЖНО: должен быть ДО CMS catch-all)
+|--------------------------------------------------------------------------
+*/
+Route::get('/legacy/csv', [LegacyCsvController::class, 'index'])->name('legacy.csv');
+Route::get('/legacy/csv/xlsx', [LegacyCsvController::class, 'downloadXlsx'])->name('legacy.csv.xlsx');
 
 /*
 |--------------------------------------------------------------------------
@@ -44,31 +52,39 @@ Route::get('/cms/{slug?}', [CmsController::class, 'page'])->name('cms.page');
 */
 Route::prefix('api')->group(function () {
 
-    // ISS
+    // ISS last (кэш 5 секунд)
     Route::get('/iss/last', function (RustApiClient $rust) {
-        return response()->json($rust->get('/iss/last'));
+        $data = Cache::remember('api:iss:last', 5, fn () => $rust->get('/iss/last'));
+        return response()->json($data);
     });
 
+    // ISS trend (кэш 5 секунд, ключ зависит от limit)
     Route::get('/iss/trend', function (Request $r, RustApiClient $rust) {
-        $limit = (int) $r->query('limit', 20);
-        return response()->json($rust->get('/iss/trend?limit=' . $limit));
+        $limit = max(2, min(200, (int) $r->query('limit', 30)));
+        $data = Cache::remember("api:iss:trend:$limit", 5, fn () => $rust->get("/iss/trend?limit=$limit"));
+        return response()->json($data);
     });
 
-    // Space summary
+    // Space summary (кэш 30 секунд)
     Route::get('/space/summary', function (RustApiClient $rust) {
-        return response()->json($rust->get('/space/summary'));
+        $data = Cache::remember('api:space:summary', 30, fn () => $rust->get('/space/summary'));
+        return response()->json($data);
     });
 
-    // OSDR list
+    // OSDR list (берём из сервиса — он может сам решать откуда)
     Route::get('/osdr/list', function (Request $r, OsdrService $service) {
-        $limit = (int) $r->query('limit', 20);
-        $items = $service->getItems($limit);
-
-        return response()->json(['items' => $items]);
-    });
-
-    // OSDR sync
-    Route::post('/osdr/sync', function (RustApiClient $rust) {
-        return response()->json($rust->get('/osdr/sync'));
+        $limit = max(1, min(200, (int) $r->query('limit', 20)));
+        return response()->json([
+            'items' => $service->getItems($limit),
+        ]);
     });
 });
+
+/*
+|--------------------------------------------------------------------------
+| CMS (последним, чтобы не перехватывать другие роуты)
+|--------------------------------------------------------------------------
+*/
+Route::get('/cms/{slug?}', [CmsController::class, 'page'])
+    ->where('slug', '.*')
+    ->name('cms.page');

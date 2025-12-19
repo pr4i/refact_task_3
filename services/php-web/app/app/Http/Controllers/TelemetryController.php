@@ -20,7 +20,7 @@ class TelemetryController extends Controller
         $order = strtolower((string) $r->query('order', 'desc'));  // asc|desc
         $order = in_array($order, ['asc','desc'], true) ? $order : 'desc';
 
-        $allowedSort = ['recorded_at', 'voltage', 'temp', 'source_file'];
+        $allowedSort = ['recorded_at', 'voltage', 'temp', 'is_ok', 'mode', 'counter', 'source_file'];
         if (!in_array($sort, $allowedSort, true)) {
             $sort = 'recorded_at';
         }

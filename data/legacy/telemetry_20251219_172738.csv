@@ -1,0 +1,2 @@
+recorded_at,voltage,temp,is_ok,mode,counter,source_file
+2025-12-19 17:27:38,3.33,-6.18,ИСТИНА,SAFE,683,telemetry_20251219_172738.csv

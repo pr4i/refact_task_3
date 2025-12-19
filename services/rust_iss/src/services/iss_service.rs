@@ -42,7 +42,9 @@ impl IssService {
     pub async fn trend(
         &self,
         state: &AppState,
+        limit: i64,
     ) -> Result<Vec<(chrono::DateTime<chrono::Utc>, Value)>, ApiError> {
-        Ok(IssRepo::last_two(&state.pool).await?)
+        Ok(IssRepo::last_n(&state.pool, limit).await?)
     }
+
 }

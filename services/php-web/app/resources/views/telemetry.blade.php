@@ -64,6 +64,9 @@
             <option value="recorded_at" @selected($sort==='recorded_at')>Время</option>
             <option value="voltage"     @selected($sort==='voltage')>Voltage</option>
             <option value="temp"        @selected($sort==='temp')>Temp</option>
+            <option value="is_ok"       @selected($sort==='is_ok')>OK?</option>
+            <option value="mode"        @selected($sort==='mode')>Mode</option>
+            <option value="counter"     @selected($sort==='counter')>Counter</option>
             <option value="source_file" @selected($sort==='source_file')>File</option>
           </select>
         </div>
@@ -96,20 +99,19 @@
     $needles = array_values(array_unique(array_filter($needles)));
 
     $hl = function ($text) use ($needles) {
-    $s = (string)$text;
-    $escaped = e($s);
+      $s = (string)$text;
+      $escaped = e($s);
 
-    foreach ($needles as $n) {
+      foreach ($needles as $n) {
         $n = trim((string)$n);
         if ($n === '') continue;
 
         // ищем по "чистому" needle, но заменяем в escaped
         $escaped = preg_replace('/(' . preg_quote($n, '/') . ')/iu', '<mark>$1</mark>', $escaped);
-    }
+      }
 
-    return $escaped;
+      return $escaped;
     };
-
   @endphp
 
   <div class="card shadow-sm border-0">
@@ -121,6 +123,9 @@
               <th style="width:220px">Time</th>
               <th style="width:120px">Voltage</th>
               <th style="width:120px">Temp</th>
+              <th style="width:90px">OK?</th>
+              <th style="width:110px">Mode</th>
+              <th style="width:110px">Counter</th>
               <th>File</th>
             </tr>
           </thead>
@@ -132,13 +137,16 @@
               </td>
               <td>{{ $row->voltage }}</td>
               <td>{{ $row->temp }}</td>
+              <td>{{ $row->is_ok }}</td>
+              <td>{{ $row->mode }}</td>
+              <td>{{ $row->counter }}</td>
               <td>
                 <span class="text-muted">{!! $hl($row->source_file) !!}</span>
               </td>
             </tr>
           @empty
             <tr>
-              <td colspan="4" class="text-center text-muted py-4">Нет данных</td>
+              <td colspan="7" class="text-center text-muted py-4">Нет данных</td>
             </tr>
           @endforelse
           </tbody>

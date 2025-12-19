@@ -57,4 +57,25 @@ impl IssRepo {
         }
         Ok(out)
     }
+    
+    pub async fn last_n(pool: &PgPool, limit: i64) -> Result<Vec<(DateTime<Utc>, Value)>> {
+        let rows = sqlx::query(
+            "SELECT fetched_at, payload
+            FROM iss_fetch_log
+            ORDER BY id DESC
+            LIMIT $1"
+        )
+        .bind(limit)
+        .fetch_all(pool)
+        .await?;
+
+        let mut out = Vec::new();
+        for r in rows {
+            let t: DateTime<Utc> = r.get("fetched_at");
+            let p: Value = r.get("payload");
+            out.push((t, p));
+        }
+        Ok(out)
+    }
+
 }

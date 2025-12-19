@@ -1,6 +1,6 @@
 FROM php:8.3-fpm-alpine
 
-# Нужные пакеты (БЕЗ gcc!)
+# Runtime пакеты (нужны в контейнере при запуске)
 RUN apk add --no-cache \
     bash \
     curl \
@@ -9,11 +9,17 @@ RUN apk add --no-cache \
     rsync \
     postgresql-client \
     postgresql-libs \
-    postgresql-dev
+    zip \
+    libzip
 
-# Сборка PHP модулей
-RUN docker-php-ext-install pdo pdo_pgsql
+# Build deps только на время сборки расширений
+RUN apk add --no-cache --virtual .build-deps \
+      $PHPIZE_DEPS \
+      libzip-dev \
+      postgresql-dev \
+  && docker-php-ext-configure zip \
+  && docker-php-ext-install pdo pdo_pgsql zip \
+  && apk del .build-deps
 
 WORKDIR /var/www/html
-
 CMD ["php-fpm"]

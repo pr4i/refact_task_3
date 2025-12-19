@@ -1,0 +1,2 @@
+recorded_at,voltage,temp,is_ok,mode,counter,source_file
+2025-12-19 17:12:32,8.36,14.88,ЛОЖЬ,MANUAL,550,telemetry_20251219_171232.csv

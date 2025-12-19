@@ -22,6 +22,8 @@ mod errors;
 mod clients;
 mod app_state;
 mod domain;
+mod validation;
+
 
 use crate::app_state::AppState;
 use crate::cache::RedisCache;
